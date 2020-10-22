@@ -32,10 +32,10 @@ def config_set_variable(var, ns, min_val, max_val, shoulder):
   if shoulder:
       c = np.linspace(min_val, max_val, ns+2)
       d = ( max_val - min_val ) / (ns + 1)
-      var['s_1'] = fuzz.trapmf(var.universe, [c[0]-d, c[0] , c[1], c[2]])
+      var['s_1'] = fuzz.trapmf(var.universe, [c[0]-d, c[0] , c[0]+d, c[0]+2*d])
       for s in range(2,ns):
         var['s_{}'.format(s)] = fuzz.trimf(var.universe, [c[s-1], c[s], c[s+1]])
-      var['s_{}'.format(ns)] = fuzz.trapmf(var.universe, [c[ns-1] , c[ns], c[ns+1], c[ns] + d])
+      var['s_{}'.format(ns)] = fuzz.trapmf(var.universe, [c[ns]-d , c[ns], c[ns]+d, c[ns] + 2*d])
       return var
   else:
       c = np.linspace(min_val, max_val, ns)
@@ -47,7 +47,7 @@ def config_set_variable(var, ns, min_val, max_val, shoulder):
 def define_input_variables(config, shoulder):
   epsilon = config['epsilon']
   input_variables  = [config_input_variable('I_{}'.format(i+1), 
-  config['nb_sets'], 
+  config['nb_sets'][0][i], 
   config['min'][0][i]-epsilon, 
   config['max'][0][i]+epsilon, 
   config['resolution'], 
@@ -58,7 +58,7 @@ def define_input_variables(config, shoulder):
 def define_output_variables(config, shoulder, defuzzify_method):
   epsilon = config['epsilon']
   output_variables = [config_output_variable('O_{}'.format(i+1), 
-  config['nb_sets'], 
+  config['nb_sets'][1][i], 
   config['min'][1][i]-epsilon, 
   config['max'][1][i]+epsilon, 
   config['resolution'], 
