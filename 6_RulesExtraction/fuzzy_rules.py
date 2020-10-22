@@ -16,19 +16,19 @@ def read_dataset(file_path):
         series = [preprocessing(line) for line in file]
     return np.array(series)
 
-def config_input_variable(name, ns, min_val, max_val, resolution=500, shoulder=True):
+def config_input_variable(name, ns, min_val, max_val, resolution, shoulder):
   universe = np.linspace(min_val, max_val, resolution)
   var = ctrl.Antecedent(universe, name)
-  var = config_variable(var, ns, min_val, max_val, shoulder)
+  var = config_set_variable(var, ns, min_val, max_val, shoulder)
   return var
 
-def config_output_variable(name, ns, min_val, max_val, resolution=500, shoulder=True):
+def config_output_variable(name, ns, min_val, max_val, resolution, shoulder, defuzzify_method):
   universe = np.linspace(min_val, max_val, resolution)
-  var = ctrl.Consequent(universe, name)
-  var = config_variable(var, ns, min_val, max_val, shoulder)
+  var = ctrl.Consequent(universe, name, defuzzify_method=defuzzify_method)
+  var = config_set_variable(var, ns, min_val, max_val, shoulder)
   return var
 
-def config_variable(var, ns, min_val, max_val, shoulder=True):
+def config_set_variable(var, ns, min_val, max_val, shoulder):
   if shoulder:
       c = np.linspace(min_val, max_val, ns+2)
       d = ( max_val - min_val ) / (ns + 1)
@@ -44,12 +44,28 @@ def config_variable(var, ns, min_val, max_val, shoulder=True):
         var['s_{}'.format(s)] = fuzz.trimf(var.universe, [c[s-1] -d, c[s-1], c[s-1] + d])
       return var
 
-def define_variables(config, shoulder):
-  input_variables  = [config_input_variable('i_{}'.format(i+1), config['nb_sets'], 0.999*config['min'][0][i], 1.001*config['max'][0][i], config['resolution'], shoulder=shoulder) \
+def define_input_variables(config, shoulder):
+  epsilon = config['epsilon']
+  input_variables  = [config_input_variable('I_{}'.format(i+1), 
+  config['nb_sets'], 
+  config['min'][0][i]-epsilon, 
+  config['max'][0][i]+epsilon, 
+  config['resolution'], 
+  shoulder=shoulder) \
                     for i in range(config['nb_inputs'])]
-  output_variables = [config_output_variable('o_{}'.format(i+1), config['nb_sets'], 0.999*config['min'][1][i], 1.001*config['max'][1][i], config['resolution'], shoulder=shoulder) \
+  return input_variables
+
+def define_output_variables(config, shoulder, defuzzify_method):
+  epsilon = config['epsilon']
+  output_variables = [config_output_variable('O_{}'.format(i+1), 
+  config['nb_sets'], 
+  config['min'][1][i]-epsilon, 
+  config['max'][1][i]+epsilon, 
+  config['resolution'], 
+  shoulder=shoulder, 
+  defuzzify_method=defuzzify_method) \
                     for i in range(config['nb_outputs'])]
-  return input_variables,output_variables
+  return output_variables
 
 def extract_rules(config, input_variables , output_variables, X, y):
   variables = input_variables + output_variables
@@ -61,7 +77,8 @@ def extract_rules(config, input_variables , output_variables, X, y):
       u_x_s = [fuzz.interp_membership(var.universe, var[term].mf, x)  for term in var.terms]
       term_max = np.argmax(u_x_s)
       rule_candidate.append((term_max , u_x_s[term_max]))
-    dr  = np.prod([u for t,u in rule_candidate]) 
+    us = [u for t,u in rule_candidate]
+    dr  = config['intersection_op'](us) 
     key = '_'.join([str(t) for t,u in rule_candidate[:-1]]) 
     all_rule_candidate.append((key, dr, rule_candidate))
   
@@ -72,14 +89,15 @@ def extract_rules(config, input_variables , output_variables, X, y):
     _,dr,rule_candidate = zip(*v)
     choosen = np.argmax(dr)
     rule = rule_candidate[choosen]
+    dr_val = dr[choosen]
     terms,_ = zip(*rule)
     ant = terms[:-1]
     con = terms[-1]
-    ant_con.append((ant,con))
+    ant_con.append((ant,con, dr_val))
 
   rules = []
   rules_view = []
-  for ant,con in ant_con:
+  for ant,con,dr_val in ant_con:
     ant_vars = []
     for a,var in zip(ant,input_variables):
       terms = [t for t in var.terms]
@@ -90,13 +108,14 @@ def extract_rules(config, input_variables , output_variables, X, y):
     var = output_variables[-1]
     terms = [t for t in var.terms]
     cons = var[terms[con]]
-    rules.append(ctrl.Rule(antc, cons))
-    rules_view.append((antc, cons))
+    rules.append(ctrl.Rule(antc, cons, **config['aggregation_opt']))
+    rules_view.append((antc, cons, dr_val))
   return rules, rules_dataframe(rules_view)
 
 def rules_dataframe(rules_view):
   df=pd.DataFrame()
   for rule in rules_view:
+      dr_val = rule[2]
       con = rule[1]
       t1=rule[0]
       ts=[]
@@ -108,7 +127,10 @@ def rules_dataframe(rules_view):
           except:
               ts.append(t1)
               break
-      rule_dict = {'i_{}'.format(i+1):a.label for i,a in enumerate(ts[::-1])}
-      rule_dict['o_1']= con.label
+      order_columns = ['I_{}'.format(i+1) for i,a in enumerate(ts[::-1])] + ['O_1', 'Dr']
+      rule_dict = {'I_{}'.format(i+1):a.label for i,a in enumerate(ts[::-1])}
+      rule_dict['O_1']= con.label
+      rule_dict['Dr']= dr_val
       df=df.append(rule_dict, ignore_index=True)
+      df = df[order_columns]
   return df
