@@ -78,7 +78,7 @@ def extract_rules(config, input_variables , output_variables, X, y):
       term_max = np.argmax(u_x_s)
       rule_candidate.append((term_max , u_x_s[term_max]))
     us = [u for t,u in rule_candidate]
-    dr  = config['intersection_op'](us) 
+    dr  = np.prod(us) 
     key = '_'.join([str(t) for t,u in rule_candidate[:-1]]) 
     all_rule_candidate.append((key, dr, rule_candidate))
   
